@@ -118,7 +118,7 @@ const ExpensesPage = () => {
 
     if (loading) return <div>Loading...</div>;
     if (error) return <div>Error: {error}</div>;
-    if (!expenses.length) return <div>No expenses found</div>;
+    if (!expenses.length) return <div>No expenses found</div>; // Test
 
     return (
         <div>
