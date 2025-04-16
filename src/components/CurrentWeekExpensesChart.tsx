@@ -49,9 +49,20 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
 }) => {
     // State to track which categories are expanded
     const [expandedCategories, setExpandedCategories] = useState<{[key: string]: boolean}>({});
+    // State to track whether to include business expenses
+    const [includeBusinessExpenses, setIncludeBusinessExpenses] = useState<boolean>(true);
 
     // Process data to get current and previous week's expenses and categories
-    const { currentWeekData, weeklyTotal, weeklyCategories, weekStart, weekEnd, previousWeekTotal } = useMemo(() => {
+    const { 
+        currentWeekData, 
+        weeklyTotal, 
+        weeklyCategories, 
+        weekStart, 
+        weekEnd, 
+        previousWeekTotal,
+        weeklyTotalWithoutBusiness,
+        previousWeekTotalWithoutBusiness
+    } = useMemo(() => {
         // Get precise date string in YYYY-MM-DD format
         function getDateString(date: Date): string {
             const year = date.getFullYear();
@@ -106,6 +117,7 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
             date: string;
             displayDate: string;
             amount: number;
+            amountWithoutBusiness: number;
         }
 
         // Initialize the days of the week
@@ -142,6 +154,7 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
                     monthNames[currentDay.getMonth()]
                 }`,
                 amount: 0,
+                amountWithoutBusiness: 0
             });
         }
         
@@ -159,12 +172,15 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
                     monthNames[previousDay.getMonth()]
                 }`,
                 amount: 0,
+                amountWithoutBusiness: 0
             });
         }
 
         // Track total amounts
         let currentWeekTotal = 0;
         let previousWeekTotal = 0;
+        let currentWeekTotalWithoutBusiness = 0;
+        let previousWeekTotalWithoutBusiness = 0;
         
         // Filter expenses for the current week
         const currentWeekExpenses = expenses.filter(expense => {
@@ -182,6 +198,7 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
         currentWeekExpenses.forEach((expense) => {
             // Extract the date part (YYYY-MM-DD) from the expense date
             const expenseDateStr = expense.date.split("T")[0];
+            const isBusinessExpense = expense.category.name === "Business";
 
             // Find the matching day in our current week data
             const dayData = currentWeekDays.find(
@@ -191,6 +208,12 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
             if (dayData) {
                 dayData.amount += expense.amount;
                 currentWeekTotal += expense.amount;
+                
+                // Track non-business expenses separately
+                if (!isBusinessExpense) {
+                    dayData.amountWithoutBusiness += expense.amount;
+                    currentWeekTotalWithoutBusiness += expense.amount;
+                }
             }
         });
         
@@ -198,6 +221,7 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
         previousWeekExpenses.forEach((expense) => {
             // Extract the date part (YYYY-MM-DD) from the expense date
             const expenseDateStr = expense.date.split("T")[0];
+            const isBusinessExpense = expense.category.name === "Business";
 
             // Find the matching day in our previous week data
             const dayData = previousWeekDays.find(
@@ -207,6 +231,12 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
             if (dayData) {
                 dayData.amount += expense.amount;
                 previousWeekTotal += expense.amount;
+                
+                // Track non-business expenses separately
+                if (!isBusinessExpense) {
+                    dayData.amountWithoutBusiness += expense.amount;
+                    previousWeekTotalWithoutBusiness += expense.amount;
+                }
             }
         });
 
@@ -271,6 +301,8 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
                 displayDate: currentWeekDays[index].displayDate,
                 currentWeek: currentWeekDays[index].amount,
                 previousWeek: previousWeekDays[index].amount,
+                currentWeekWithoutBusiness: currentWeekDays[index].amountWithoutBusiness,
+                previousWeekWithoutBusiness: previousWeekDays[index].amountWithoutBusiness,
                 currentDate: currentWeekDays[index].date,
                 previousDate: previousWeekDays[index].date
             };
@@ -280,77 +312,145 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
             currentWeekData: combinedChartData,
             weeklyTotal: currentWeekTotal,
             previousWeekTotal: previousWeekTotal,
+            weeklyTotalWithoutBusiness: currentWeekTotalWithoutBusiness,
+            previousWeekTotalWithoutBusiness: previousWeekTotalWithoutBusiness,
             weeklyCategories: categoryResults,
             weekStart: weekStart.toLocaleDateString("en-GB"),
             weekEnd: weekEnd.toLocaleDateString("en-GB")
         };
     }, [expenses]);
 
+    // Format number for display
+    const formatNumber = (value: number): string => {
+        return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+    };
+
+    // Filter categories if not including business and recalculate percentages
+    const displayCategories = useMemo(() => {
+        if (includeBusinessExpenses) {
+            return weeklyCategories;
+        } else {
+            // Filter out Business category and create deep copies to avoid mutating original data
+            const filteredCategories = weeklyCategories
+                .filter(category => category.name !== "Business")
+                .map(category => ({
+                    ...category,
+                    // Create a new percentage calculated against the non-business total
+                    percentage: weeklyTotalWithoutBusiness > 0 
+                        ? (category.amount / weeklyTotalWithoutBusiness) * 100 
+                        : 0,
+                    // Create a deep copy of expenses array to avoid mutation
+                    expenses: [...category.expenses]
+                }));
+            
+            return filteredCategories;
+        }
+    }, [weeklyCategories, includeBusinessExpenses, weeklyTotalWithoutBusiness]);
+
+    // Determine which data to display based on business filter toggle
+    const activeWeeklyTotal = includeBusinessExpenses ? weeklyTotal : weeklyTotalWithoutBusiness;
+    const activePreviousWeekTotal = includeBusinessExpenses ? previousWeekTotal : previousWeekTotalWithoutBusiness;
+
+    // Create chart data based on business filter toggle
+    const chartData = useMemo(() => {
+        if (includeBusinessExpenses) {
+            return currentWeekData.map(data => ({
+                ...data,
+                currentWeekDisplay: data.currentWeek,
+                previousWeekDisplay: data.previousWeek
+            }));
+        } else {
+            return currentWeekData.map(data => ({
+                ...data,
+                currentWeekDisplay: data.currentWeekWithoutBusiness,
+                previousWeekDisplay: data.previousWeekWithoutBusiness
+            }));
+        }
+    }, [currentWeekData, includeBusinessExpenses]);
+
     return (
         <Card className="shadow-md">
             <CardContent className="p-4">
                 <div className="flex flex-col gap-4 mb-4">
-                    <div className="text-xl font-semibold">
-                        Current Week Expenses ({weekStart} to {weekEnd})
+                    <div className="flex justify-between items-center">
+                        <div className="text-xl font-semibold">
+                            Current Week Expenses ({weekStart} to {weekEnd})
+                        </div>
+                        <div className="flex items-center">
+                            <label className="inline-flex items-center cursor-pointer">
+                                <input 
+                                    type="checkbox"
+                                    checked={includeBusinessExpenses}
+                                    onChange={() => setIncludeBusinessExpenses(!includeBusinessExpenses)}
+                                    className="sr-only peer"
+                                />
+                                <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                <span className="ms-3 text-sm font-medium text-gray-900">
+                                    Include Business Expenses
+                                </span>
+                            </label>
+                        </div>
                     </div>
                     <div className="flex flex-row gap-6">
                         <div className="flex items-center gap-2">
                             <div className="w-4 h-4 bg-green-500 rounded"></div>
                             <div className="text-lg">
                                 Current Week Total:{" "}
-                                {Number.isInteger(weeklyTotal)
-                                    ? weeklyTotal
-                                    : weeklyTotal.toFixed(2)}
+                                {formatNumber(activeWeeklyTotal)}
+                                {!includeBusinessExpenses && (
+                                    <span className="text-sm ml-2 text-gray-500">
+                                        (excluding business)
+                                    </span>
+                                )}
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
                             <div className="w-4 h-4 bg-purple-500 rounded"></div>
                             <div className="text-lg">
                                 Previous Week Total:{" "}
-                                {Number.isInteger(previousWeekTotal)
-                                    ? previousWeekTotal
-                                    : previousWeekTotal.toFixed(2)}
+                                {formatNumber(activePreviousWeekTotal)}
+                                {!includeBusinessExpenses && (
+                                    <span className="text-sm ml-2 text-gray-500">
+                                        (excluding business)
+                                    </span>
+                                )}
                             </div>
                         </div>
                         <div className="text-lg ml-4">
                             Week-over-Week:{" "}
-                            <span className={previousWeekTotal > 0 
-                                ? (weeklyTotal > previousWeekTotal ? "text-red-500" : "text-green-500") 
+                            <span className={activePreviousWeekTotal > 0 
+                                ? (activeWeeklyTotal > activePreviousWeekTotal ? "text-red-500" : "text-green-500") 
                                 : ""}>
-                                {previousWeekTotal > 0 
-                                    ? (((weeklyTotal - previousWeekTotal) / previousWeekTotal) * 100).toFixed(1) + "%" 
+                                {activePreviousWeekTotal > 0 
+                                    ? (((activeWeeklyTotal - activePreviousWeekTotal) / activePreviousWeekTotal) * 100).toFixed(1) + "%" 
                                     : "N/A"}
                             </span>
                         </div>
                     </div>
                 </div>
                 <div style={{ width: "100%", height: 400 }}>
-                    {weeklyTotal > 0 || previousWeekTotal > 0 ? (
+                    {(activeWeeklyTotal > 0 || activePreviousWeekTotal > 0) ? (
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={currentWeekData}>
+                            <BarChart data={chartData}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis
                                     dataKey="day"
                                     tickFormatter={(day, index) => {
-                                        const data = currentWeekData[index];
+                                        const data = chartData[index];
                                         return `${day}\n${data.displayDate}`;
                                     }}
                                     height={60}
                                 />
                                 <YAxis
-                                    tickFormatter={(value) =>
-                                        Number.isInteger(value)
-                                            ? value.toString()
-                                            : value.toFixed(2)
-                                    }
+                                    tickFormatter={(value) => formatNumber(value)}
                                     width={80}
                                 />
                                 <Tooltip
                                     content={({ active, payload, label }) => {
                                         if (active && payload && payload.length) {
-                                            const currentWeekValue = payload.find(p => p.dataKey === "currentWeek")?.value;
-                                            const previousWeekValue = payload.find(p => p.dataKey === "previousWeek")?.value;
-                                            const data = currentWeekData.find(d => d.day === label);
+                                            const currentWeekValue = payload.find(p => p.dataKey === "currentWeekDisplay")?.value;
+                                            const previousWeekValue = payload.find(p => p.dataKey === "previousWeekDisplay")?.value;
+                                            const data = chartData.find(d => d.day === label);
                                             
                                             // Convert to numbers for safe comparison
                                             const currentWeekNum = currentWeekValue !== undefined ? Number(currentWeekValue) : 0;
@@ -361,17 +461,23 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
                                                     <p className="font-semibold">{`${label} ${data?.displayDate}`}</p>
                                                     <p className="text-sm text-gray-600">
                                                         Current Week: <span className="font-medium text-green-600">
-                                                            {Number.isInteger(currentWeekNum) 
-                                                                ? currentWeekNum 
-                                                                : currentWeekNum.toFixed(2)}
+                                                            {formatNumber(currentWeekNum)}
                                                         </span>
+                                                        {!includeBusinessExpenses && (
+                                                            <span className="text-xs ml-1 text-gray-500">
+                                                                (excl. business)
+                                                            </span>
+                                                        )}
                                                     </p>
                                                     <p className="text-sm text-gray-600">
                                                         Previous Week: <span className="font-medium text-purple-600">
-                                                            {Number.isInteger(previousWeekNum) 
-                                                                ? previousWeekNum 
-                                                                : previousWeekNum.toFixed(2)}
+                                                            {formatNumber(previousWeekNum)}
                                                         </span>
+                                                        {!includeBusinessExpenses && (
+                                                            <span className="text-xs ml-1 text-gray-500">
+                                                                (excl. business)
+                                                            </span>
+                                                        )}
                                                     </p>
                                                     {previousWeekNum > 0 && (
                                                         <p className="text-sm text-gray-600">
@@ -390,18 +496,26 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
                                 />
                                 <Legend 
                                     payload={[
-                                        { value: 'Current Week', type: 'square', color: '#82ca9d' },
-                                        { value: 'Previous Week', type: 'square', color: '#8884d8' }
+                                        { 
+                                            value: includeBusinessExpenses ? 'Current Week' : 'Current Week (excl. business)', 
+                                            type: 'square', 
+                                            color: '#82ca9d' 
+                                        },
+                                        { 
+                                            value: includeBusinessExpenses ? 'Previous Week' : 'Previous Week (excl. business)', 
+                                            type: 'square', 
+                                            color: '#8884d8' 
+                                        }
                                     ]}
                                 />
                                 <Bar
-                                    dataKey="currentWeek"
-                                    name="Current Week"
+                                    dataKey="currentWeekDisplay"
+                                    name={includeBusinessExpenses ? "Current Week" : "Current Week (excl. business)"}
                                     fill="#82ca9d"
                                 />
                                 <Bar
-                                    dataKey="previousWeek"
-                                    name="Previous Week"
+                                    dataKey="previousWeekDisplay"
+                                    name={includeBusinessExpenses ? "Previous Week" : "Previous Week (excl. business)"}
                                     fill="#8884d8"
                                 />
                             </BarChart>
@@ -416,9 +530,9 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
                 {/* Category expenses for this week section */}
                 <div className="mt-8">
                     <h3 className="text-xl font-semibold mb-4">Category Expenses for Current Week</h3>
-                    {weeklyCategories.length > 0 ? (
+                    {displayCategories.length > 0 ? (
                         <div className="space-y-4">
-                            {weeklyCategories.map((category) => {
+                            {displayCategories.map((category) => {
                                 const isExpanded = expandedCategories[category.name] || false;
                                 
                                 return (
@@ -444,9 +558,7 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
                                             </div>
                                             <div className="flex gap-2">
                                                 <span>
-                                                    {Number.isInteger(category.amount)
-                                                        ? category.amount
-                                                        : category.amount.toFixed(2)}
+                                                    {formatNumber(category.amount)}
                                                 </span>
                                                 <span className="text-gray-500">
                                                     ({category.percentage.toFixed(1)}%)
@@ -470,9 +582,7 @@ const CurrentWeekExpensesChart: React.FC<CurrentWeekExpensesChartProps> = ({
                                                                 <tr key={expense.id} className="hover:bg-gray-50">
                                                                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{expense.date}</td>
                                                                     <td className="px-3 py-2 whitespace-nowrap text-sm font-medium">
-                                                                        {Number.isInteger(expense.amount) 
-                                                                            ? expense.amount 
-                                                                            : expense.amount.toFixed(2)}
+                                                                        {formatNumber(expense.amount)}
                                                                     </td>
                                                                     <td className="px-3 py-2 text-sm text-gray-500">{expense.comment || "-"}</td>
                                                                 </tr>

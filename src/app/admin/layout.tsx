@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Menu, LayoutDashboard, LogOut, Plus, User } from 'lucide-react';
+import { Menu, LayoutDashboard, LogOut, Plus, User, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { supabase } from '@/lib/supabase'; // Import the supabase client
-import { useRouter } from 'next/navigation'; // For redirecting after logout
+import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 // Define menu items array
 const menuItems = [
@@ -34,46 +34,69 @@ export default function AdminLayout({
     children: React.ReactNode;
 }) {
     const [isCollapsed, setIsCollapsed] = useState(false);
-    const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null); // To track if user is logged in
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
     const pathname = usePathname();
-    const router = useRouter(); // To handle page redirection after logout
+    const router = useRouter();
 
     // Check if the user is logged in when the layout is loaded
     useEffect(() => {
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) {
-                router.push('/'); // Redirect to root if not logged in
+                router.push('/');
             } else {
-                setIsLoggedIn(true); // Set logged in state to true
+                setIsLoggedIn(true);
             }
         };
 
         checkSession();
     }, [router]);
 
+    // Close mobile menu when route changes
+    useEffect(() => {
+        setIsMobileMenuOpen(false);
+    }, [pathname]);
+
     // Logout function
     const handleLogout = async () => {
-        const { error } = await supabase.auth.signOut(); // Supabase logout
+        const { error } = await supabase.auth.signOut();
 
         if (error) {
             console.error('Error logging out:', error.message);
         } else {
-            // Redirect to the login page after logging out
             router.push('/');
         }
     };
 
     return (
-        <div className="min-h-screen flex">
-            {/* Sidebar Navigation */}
+        <div className="min-h-screen flex flex-col md:flex-row">
+            {/* Mobile Header with Menu Button */}
+            <div className="bg-gray-900 text-white p-4 flex items-center justify-between md:hidden">
+                <h1 className="text-xl font-bold">Financat</h1>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-white hover:bg-gray-800"
+                    onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                >
+                    {isMobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+                </Button>
+            </div>
+
+            {/* Sidebar Navigation - Hidden on mobile by default, shown when menu clicked */}
             <div
                 className={cn(
                     "bg-gray-900 text-white transition-all duration-300",
-                    isCollapsed ? "w-16" : "w-64"
+                    // Desktop styles
+                    "hidden md:block",
+                    isCollapsed ? "md:w-16" : "md:w-64",
+                    // Mobile styles - absolute positioning when open
+                    isMobileMenuOpen ? "block fixed inset-0 z-50" : ""
                 )}
             >
-                <div className="p-4 flex items-center justify-between">
+                {/* Desktop Sidebar Header */}
+                <div className="p-4 hidden md:flex items-center justify-between">
                     {!isCollapsed && (
                         <h1 className="text-xl font-bold">My Finance</h1>
                     )}
@@ -86,6 +109,21 @@ export default function AdminLayout({
                         <Menu className="h-4 w-4" />
                     </Button>
                 </div>
+
+                {/* Mobile Sidebar Header with Close Button */}
+                <div className="p-4 flex md:hidden items-center justify-between">
+                    <h1 className="text-xl font-bold">My Finance</h1>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-white hover:bg-gray-800"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                        <X className="h-4 w-4" />
+                    </Button>
+                </div>
+
+                {/* Navigation Items */}
                 <nav className="mt-4">
                     {menuItems.map((item) => (
                         <Link
@@ -97,24 +135,20 @@ export default function AdminLayout({
                             )}
                         >
                             {item.icon}
-                            {!isCollapsed && (
+                            {(!isCollapsed || isMobileMenuOpen) && (
                                 <span className="ml-2">{item.title}</span>
                             )}
                         </Link>
                     ))}
-                    <Link
-                        href="#"
-                        onClick={async () => {
-                            await supabase.auth.signOut();
-                            router.push("/");
-                        }}
+                    <button
+                        onClick={handleLogout}
                         className={cn(
-                            "flex items-center px-4 py-2 hover:bg-gray-800"
+                            "flex items-center px-4 py-2 hover:bg-gray-800 w-full text-left"
                         )}
                     >
                         <LogOut className="h-4 w-4" />
-                        {!isCollapsed && <span className="ml-2">Logout</span>}
-                    </Link>
+                        {(!isCollapsed || isMobileMenuOpen) && <span className="ml-2">Logout</span>}
+                    </button>
                 </nav>
             </div>
 
@@ -122,6 +156,14 @@ export default function AdminLayout({
             <div className="flex-1 bg-gray-100">
                 <main className="p-6">{children}</main>
             </div>
+
+            {/* Overlay for mobile menu */}
+            {isMobileMenuOpen && (
+                <div 
+                    className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+                    onClick={() => setIsMobileMenuOpen(false)}
+                />
+            )}
         </div>
     );
 }

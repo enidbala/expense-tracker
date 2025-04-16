@@ -49,9 +49,11 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
 }) => {
     // State to track which categories are expanded
     const [expandedCategories, setExpandedCategories] = useState<{[key: string]: boolean}>({});
+    // State to track whether to include business expenses
+    const [includeBusinessExpenses, setIncludeBusinessExpenses] = useState<boolean>(true);
 
     // Filter expenses to only show current month and process daily sums
-    const { dailySums, monthTotal, monthName, categoryExpenses } = useMemo(() => {
+    const { dailySums, monthTotal, monthName, categoryExpenses, totalWithoutBusiness } = useMemo(() => {
         const today = new Date();
         const currentMonth = today.getMonth();
         const currentYear = today.getFullYear();
@@ -71,23 +73,34 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
             0
         );
 
-        // Group expenses by day and calculate daily sums
-        const dailyMap = new Map<number, { day: number; amount: number; fullDate: string }>();
+        // Calculate total excluding business expenses
+        const nonBusinessTotal = currentMonthExpenses
+            .filter(expense => expense.category.name !== "Business")
+            .reduce((sum, expense) => sum + expense.amount, 0);
+
+        // Group expenses by day and calculate daily sums (with and without business)
+        const dailyMap = new Map<number, { day: number; amount: number; amountWithoutBusiness: number; fullDate: string }>();
 
         currentMonthExpenses.forEach((expense) => {
             const expenseDate = new Date(expense.date);
             const day = expenseDate.getDate();
             const fullDate = new Date(expense.date).toLocaleDateString("en-GB");
+            const amount = expense.amount;
+            const isBusinessExpense = expense.category.name === "Business";
 
             if (dailyMap.has(day)) {
                 const existingDay = dailyMap.get(day);
                 if (existingDay) {
-                    existingDay.amount += expense.amount;
+                    existingDay.amount += amount;
+                    if (!isBusinessExpense) {
+                        existingDay.amountWithoutBusiness += amount;
+                    }
                 }
             } else {
                 dailyMap.set(day, {
                     day,
-                    amount: expense.amount,
+                    amount: amount,
+                    amountWithoutBusiness: isBusinessExpense ? 0 : amount,
                     fullDate,
                 });
             }
@@ -171,8 +184,53 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
             monthTotal: total,
             monthName: monthNames[currentMonth],
             categoryExpenses: categoryResults,
+            totalWithoutBusiness: nonBusinessTotal
         };
     }, [expenses]);
+
+    // Format number for display
+    const formatNumber = (value: number): string => {
+        return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+    };
+
+    // Toggle which data to display based on includeBusinessExpenses state
+    const displayData = useMemo(() => {
+        if (includeBusinessExpenses) {
+            return dailySums.map(item => ({
+                day: item.day,
+                amount: item.amount,
+                fullDate: item.fullDate
+            }));
+        } else {
+            return dailySums.map(item => ({
+                day: item.day,
+                amount: item.amountWithoutBusiness,
+                fullDate: item.fullDate
+            }));
+        }
+    }, [dailySums, includeBusinessExpenses]);
+
+    // Filter categories if not including business and recalculate percentages
+    const displayCategories = useMemo(() => {
+        if (includeBusinessExpenses) {
+            return categoryExpenses;
+        } else {
+            // Filter out Business category and create deep copies to avoid mutating original data
+            const filteredCategories = categoryExpenses
+                .filter(category => category.name !== "Business")
+                .map(category => ({
+                    ...category,
+                    // Create a new percentage calculated against the non-business total
+                    percentage: totalWithoutBusiness > 0 
+                        ? (category.amount / totalWithoutBusiness) * 100 
+                        : 0,
+                    // Create a deep copy of expenses array to avoid mutation
+                    expenses: [...category.expenses]
+                }));
+            
+            return filteredCategories;
+        }
+    }, [categoryExpenses, includeBusinessExpenses, totalWithoutBusiness]);
 
     return (
         <Card className="shadow-md">
@@ -181,17 +239,36 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
                     <div className="text-xl font-semibold">
                         {monthName} Daily Expenses
                     </div>
-                    <div className="text-lg">
-                        Total:{" "}
-                        {Number.isInteger(monthTotal)
-                            ? monthTotal
-                            : monthTotal.toFixed(2)}
+                    <div className="flex justify-between items-center">
+                        <div className="text-lg">
+                            Total:{" "}
+                            {formatNumber(includeBusinessExpenses ? monthTotal : totalWithoutBusiness)}
+                            {!includeBusinessExpenses && (
+                                <span className="text-sm ml-2 text-gray-500">
+                                    (excluding business expenses)
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center">
+                            <label className="inline-flex items-center cursor-pointer">
+                                <input 
+                                    type="checkbox"
+                                    checked={includeBusinessExpenses}
+                                    onChange={() => setIncludeBusinessExpenses(!includeBusinessExpenses)}
+                                    className="sr-only peer"
+                                />
+                                <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                <span className="ms-3 text-sm font-medium text-gray-900">
+                                    Include Business Expenses
+                                </span>
+                            </label>
+                        </div>
                     </div>
                 </div>
                 <div style={{ width: "100%", height: 400 }}>
-                    {dailySums.length > 0 ? (
+                    {displayData.length > 0 ? (
                         <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={dailySums}>
+                            <AreaChart data={displayData}>
                                 <CartesianGrid strokeDasharray="3 3" />
                                 <XAxis
                                     dataKey="day"
@@ -202,22 +279,16 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
                                     }}
                                 />
                                 <YAxis
-                                    tickFormatter={(value) =>
-                                        Number.isInteger(value)
-                                            ? value.toString()
-                                            : value.toFixed(2)
-                                    }
+                                    tickFormatter={(value) => formatNumber(value)}
                                     width={80}
                                 />
                                 <Tooltip
                                     formatter={(value: number) => [
-                                        Number.isInteger(value)
-                                            ? value.toString()
-                                            : value.toFixed(2),
+                                        formatNumber(value),
                                         "Daily Total",
                                     ]}
                                     labelFormatter={(day) => {
-                                        const dataPoint = dailySums.find(
+                                        const dataPoint = displayData.find(
                                             (d) => d.day === day
                                         );
                                         return `Date: ${dataPoint?.fullDate}`;
@@ -227,7 +298,7 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
                                 <Area
                                     type="monotone"
                                     dataKey="amount"
-                                    name="Daily Expense"
+                                    name={includeBusinessExpenses ? "Daily Expense" : "Daily Expense (excl. Business)"}
                                     stroke="#8884d8"
                                     fill="#8884d8"
                                     fillOpacity={0.6}
@@ -244,9 +315,9 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
                 {/* Category expenses for this month section */}
                 <div className="mt-8">
                     <h3 className="text-xl font-semibold mb-4">Category Expenses for {monthName}</h3>
-                    {categoryExpenses.length > 0 ? (
+                    {displayCategories.length > 0 ? (
                         <div className="space-y-4">
-                            {categoryExpenses.map((category) => {
+                            {displayCategories.map((category) => {
                                 const isExpanded = expandedCategories[category.name] || false;
                                 
                                 return (
@@ -272,9 +343,7 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
                                             </div>
                                             <div className="flex gap-2">
                                                 <span>
-                                                    {Number.isInteger(category.amount)
-                                                        ? category.amount
-                                                        : category.amount.toFixed(2)}
+                                                    {formatNumber(category.amount)}
                                                 </span>
                                                 <span className="text-gray-500">
                                                     ({category.percentage.toFixed(1)}%)
@@ -298,9 +367,7 @@ const CurrentMonthExpensesChart: React.FC<CurrentMonthExpensesChartProps> = ({
                                                                 <tr key={expense.id} className="hover:bg-gray-50">
                                                                     <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{expense.date}</td>
                                                                     <td className="px-3 py-2 whitespace-nowrap text-sm font-medium">
-                                                                        {Number.isInteger(expense.amount) 
-                                                                            ? expense.amount 
-                                                                            : expense.amount.toFixed(2)}
+                                                                        {formatNumber(expense.amount)}
                                                                     </td>
                                                                     <td className="px-3 py-2 text-sm text-gray-500">{expense.comment || "-"}</td>
                                                                 </tr>
