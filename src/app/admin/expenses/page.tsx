@@ -9,138 +9,129 @@ import CurrentMonthExpensesChart from "@/components/CurrentMonthExpensesChart";
 import CurrentWeekExpensesChart from "@/components/CurrentWeekExpensesChart";
 
 type Expense = {
+  id: string;
+  comment: string;
+  amount: number;
+  category: {
     id: string;
-    comment: string;
-    amount: number;
-    category: {
-        id: string;
-        name: string;
-    };
-    date: string;
+    name: string;
+  };
+  date: string;
 };
 
 type DailyExpense = {
-    date: string;
-    amount: number;
+  date: string;
+  amount: number;
 };
 
 const ExpensesPage = () => {
-    const [expenses, setExpenses] = useState<Expense[]>([]);
-    const [dailyExpenses, setDailyExpenses] = useState<DailyExpense[]>([]);
-    const [loading, setLoading] = useState<boolean>(true);
-    const [error, setError] = useState<string | null>(null);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [dailyExpenses, setDailyExpenses] = useState<DailyExpense[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                // Fetch detailed expenses
-                const { data: expensesData, error: expensesError } =
-                    await supabase
-                        .from("expenses")
-                        .select(
-                            `
-                        *,
-                        category:expense_categories(id, name)
-                    `
-                        )
-                        .order("date", { ascending: true });
+  useEffect(() => {
+    const fetchAllExpenses = async () => {
+      try {
+        // Fetch all expenses in chunks of 1000
+        let allExpenses: Expense[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        let fetchMore = true;
 
-                // Fetch daily aggregated expenses
-                const { data: dailyData, error: dailyError } =
-                    await supabase.rpc("get_daily_expenses");
-                // You'll need to create this function in Supabase - see below
+        while (fetchMore) {
+          const { data, error: fetchError } = await supabase
+            .from("expenses")
+            .select(
+              `
+                *,
+                category:expense_categories(id, name)
+              `
+            )
+            .order("date", { ascending: true })
+            .range(from, from + pageSize - 1);
 
-                if (expensesError) throw expensesError;
-                if (dailyError) throw dailyError;
+          if (fetchError) throw fetchError;
 
-                setExpenses(expensesData);
-                setDailyExpenses(dailyData);
-            } catch (err) {
-                setError(
-                    err instanceof Error ? err.message : "Failed to fetch data"
-                );
-            } finally {
-                setLoading(false);
-            }
-        };
+          if (data && data.length > 0) {
+            allExpenses = allExpenses.concat(data as Expense[]);
+            from += pageSize;
+          }
 
-        fetchData();
-    }, []);
-
-    const handleDelete = async (id: string) => {
-        try {
-            const { error } = await supabase
-                .from("expenses")
-                .delete()
-                .eq("id", id);
-
-            if (error) {
-                throw new Error(error.message);
-            }
-
-            setExpenses((prevExpenses) =>
-                prevExpenses.filter((expense) => expense.id !== id)
-            );
-        } catch (err) {
-            setError(
-                err instanceof Error ? err.message : "Failed to delete expense"
-            );
+          if (!data || data.length < pageSize) {
+            fetchMore = false;
+          }
         }
+
+        setExpenses(allExpenses);
+
+        // Fetch daily aggregated expenses
+        const { data: dailyData, error: dailyError } = await supabase.rpc("get_daily_expenses");
+        if (dailyError) throw dailyError;
+        setDailyExpenses(dailyData as DailyExpense[]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch data");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    const handleUpdate = async (updatedExpense: Expense) => {
-        try {
-            const { error } = await supabase
-                .from("expenses")
-                .update({
-                    comment: updatedExpense.comment,
-                    amount: updatedExpense.amount,
-                    date: updatedExpense.date,
-                })
-                .eq("id", updatedExpense.id);
+    fetchAllExpenses();
+  }, []);
 
-            if (error) {
-                throw new Error(error.message);
-            }
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase.from("expenses").delete().eq("id", id);
+      if (error) throw new Error(error.message);
 
-            // Update local state
-            setExpenses((prevExpenses) =>
-                prevExpenses.map((expense) =>
-                    expense.id === updatedExpense.id ? updatedExpense : expense
-                )
-            );
-        } catch (err) {
-            setError(
-                err instanceof Error ? err.message : "Failed to update expense"
-            );
-        }
-    };
+      setExpenses((prev) => prev.filter((expense) => expense.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete expense");
+    }
+  };
 
-    if (loading) return <div>Loading...</div>;
-    if (error) return <div>Error: {error}</div>;
-    if (!expenses.length) return <div>No expenses found</div>; // Test
+  const handleUpdate = async (updatedExpense: Expense) => {
+    try {
+      const { error } = await supabase
+        .from("expenses")
+        .update({
+          comment: updatedExpense.comment,
+          amount: updatedExpense.amount,
+          date: updatedExpense.date,
+        })
+        .eq("id", updatedExpense.id);
 
-    return (
-        <div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                <CurrentMonthExpensesChart expenses={expenses} />
-                <CurrentWeekExpensesChart expenses={expenses} />
-            </div>
-            <div className="mt-6">
-                <MonthlyExpensesChart expenses={dailyExpenses} />
-            </div>
-            <div className="mt-6">
-                <AllExpensesChart expenses={dailyExpenses} />
-            </div>
-            <div className="mt-6">
-                <ExpensesList
-                    expenses={expenses}
-                    onDelete={handleDelete}
-                    onUpdate={handleUpdate}
-                />
-            </div>
-        </div>
-    );
+      if (error) throw new Error(error.message);
+
+      setExpenses((prev) =>
+        prev.map((expense) => (expense.id === updatedExpense.id ? updatedExpense : expense))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update expense");
+    }
+  };
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error}</div>;
+  if (!expenses.length) return <div>No expenses found</div>;
+
+  return (
+    <div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <CurrentMonthExpensesChart expenses={expenses} />
+        <CurrentWeekExpensesChart expenses={expenses} />
+      </div>
+      <div className="mt-6">
+        <MonthlyExpensesChart expenses={dailyExpenses} />
+      </div>
+      <div className="mt-6">
+        <AllExpensesChart expenses={dailyExpenses} />
+      </div>
+      <div className="mt-6">
+        <ExpensesList expenses={expenses} onDelete={handleDelete} onUpdate={handleUpdate} />
+      </div>
+    </div>
+  );
 };
 
 export default ExpensesPage;
