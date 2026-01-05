@@ -116,18 +116,21 @@ const ExpensesPage = () => {
   if (!expenses.length) return <div>No expenses found</div>;
 
   return (
-    <div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+    <div className="space-y-8">
+      {/* Current Period Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <CurrentMonthExpensesChart expenses={expenses} />
         <CurrentWeekExpensesChart expenses={expenses} />
       </div>
-      <div className="mt-6">
+
+      {/* Historical Charts */}
+      <div className="space-y-6">
         <MonthlyExpensesChart expenses={dailyExpenses} />
-      </div>
-      <div className="mt-6">
         <AllExpensesChart expenses={dailyExpenses} />
       </div>
-      <div className="mt-6">
+
+      {/* Detailed Expenses List */}
+      <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-200/50">
         <ExpensesList expenses={expenses} onDelete={handleDelete} onUpdate={handleUpdate} />
       </div>
     </div>

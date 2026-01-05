@@ -3,7 +3,7 @@ import React from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowUpDown, ArrowUp, ArrowDown, Calendar, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface Expense {
     id: string;
@@ -25,6 +25,8 @@ interface Props {
 type SortField = 'amount' | 'category' | 'date' | null;
 type SortDirection = 'asc' | 'desc';
 
+const ITEMS_PER_PAGE = 50;
+
 const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editedExpense, setEditedExpense] = useState<Expense | null>(null);
@@ -34,6 +36,7 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
     const [dateRangeEnd, setDateRangeEnd] = useState<string>("");
     const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
     const [showFilterPanel, setShowFilterPanel] = useState<boolean>(false);
+    const [currentPage, setCurrentPage] = useState<number>(1);
 
     const handleSort = (field: SortField) => {
         if (sortField === field) {
@@ -42,6 +45,7 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
             setSortField(field);
             setSortDirection('asc');
         }
+        setCurrentPage(1); // Reset to first page when sorting changes
     };
 
     // Filter expenses by date range and then sort
@@ -98,9 +102,21 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
         });
     }, [expenses, sortField, sortDirection, dateRangeStart, dateRangeEnd]);
 
+    // Pagination calculations
+    const totalPages = Math.ceil(filteredAndSortedExpenses.length / ITEMS_PER_PAGE);
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const paginatedExpenses = filteredAndSortedExpenses.slice(startIndex, endIndex);
+
+    // Total amount for all filtered expenses (not just current page)
     const totalAmount = useMemo(() => {
         return filteredAndSortedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
     }, [filteredAndSortedExpenses]);
+
+    // Total amount for current page
+    const pageTotal = useMemo(() => {
+        return paginatedExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    }, [paginatedExpenses]);
 
     const handleEdit = (expense: Expense) => {
         setEditingId(expense.id);
@@ -124,10 +140,31 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
     const handleClearDateRange = () => {
         setDateRangeStart("");
         setDateRangeEnd("");
+        setCurrentPage(1); // Reset to first page when clearing filters
     };
 
     const toggleExpand = (id: string) => {
         setExpandedExpenseId(expandedExpenseId === id ? null : id);
+    };
+
+    // Pagination handlers
+    const goToPage = (page: number) => {
+        setCurrentPage(page);
+        setExpandedExpenseId(null); // Collapse any expanded items when changing pages
+        setEditingId(null); // Cancel any editing when changing pages
+        setEditedExpense(null);
+    };
+
+    const goToPrevPage = () => {
+        if (currentPage > 1) {
+            goToPage(currentPage - 1);
+        }
+    };
+
+    const goToNextPage = () => {
+        if (currentPage < totalPages) {
+            goToPage(currentPage + 1);
+        }
     };
 
     // Set date range shortcuts
@@ -138,6 +175,7 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
         
         setDateRangeStart(firstDay.toISOString().split('T')[0]);
         setDateRangeEnd(lastDay.toISOString().split('T')[0]);
+        setCurrentPage(1); // Reset to first page
     };
 
     const setLastMonth = () => {
@@ -147,6 +185,7 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
         
         setDateRangeStart(firstDay.toISOString().split('T')[0]);
         setDateRangeEnd(lastDay.toISOString().split('T')[0]);
+        setCurrentPage(1); // Reset to first page
     };
 
     const setLastThreeMonths = () => {
@@ -156,6 +195,7 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
         
         setDateRangeStart(threeMonthsAgo.toISOString().split('T')[0]);
         setDateRangeEnd(lastDay.toISOString().split('T')[0]);
+        setCurrentPage(1); // Reset to first page
     };
 
     const setThisYear = () => {
@@ -165,6 +205,7 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
         
         setDateRangeStart(firstDay.toISOString().split('T')[0]);
         setDateRangeEnd(lastDay.toISOString().split('T')[0]);
+        setCurrentPage(1); // Reset to first page
     };
 
     const getSortIcon = (field: SortField) => {
@@ -172,6 +213,42 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
         return sortDirection === 'asc' ? 
             <ArrowUp className="w-4 h-4 ml-1" /> : 
             <ArrowDown className="w-4 h-4 ml-1" />;
+    };
+
+    // Generate page numbers for pagination display
+    const getPageNumbers = () => {
+        const pages = [];
+        const maxVisiblePages = 5;
+        
+        if (totalPages <= maxVisiblePages) {
+            for (let i = 1; i <= totalPages; i++) {
+                pages.push(i);
+            }
+        } else {
+            if (currentPage <= 3) {
+                for (let i = 1; i <= 4; i++) {
+                    pages.push(i);
+                }
+                pages.push('...');
+                pages.push(totalPages);
+            } else if (currentPage >= totalPages - 2) {
+                pages.push(1);
+                pages.push('...');
+                for (let i = totalPages - 3; i <= totalPages; i++) {
+                    pages.push(i);
+                }
+            } else {
+                pages.push(1);
+                pages.push('...');
+                for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+                    pages.push(i);
+                }
+                pages.push('...');
+                pages.push(totalPages);
+            }
+        }
+        
+        return pages;
     };
 
     return (
@@ -202,7 +279,10 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
                                     id="start-date"
                                     type="date"
                                     value={dateRangeStart}
-                                    onChange={(e) => setDateRangeStart(e.target.value)}
+                                    onChange={(e) => {
+                                        setDateRangeStart(e.target.value);
+                                        setCurrentPage(1); // Reset to first page when filter changes
+                                    }}
                                     className="w-full md:w-40"
                                 />
                             </div>
@@ -215,7 +295,10 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
                                     id="end-date"
                                     type="date"
                                     value={dateRangeEnd}
-                                    onChange={(e) => setDateRangeEnd(e.target.value)}
+                                    onChange={(e) => {
+                                        setDateRangeEnd(e.target.value);
+                                        setCurrentPage(1); // Reset to first page when filter changes
+                                    }}
                                     className="w-full md:w-40"
                                 />
                             </div>
@@ -244,17 +327,65 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
                             </Button>
                         </div>
                         
-                        {(dateRangeStart || dateRangeEnd) && (
+                        {(dateRangeStart || dateRangeEnd || filteredAndSortedExpenses.length !== expenses.length) && (
                             <div className="mt-4 text-sm text-gray-500">
-                                Showing expenses 
+                                Showing {filteredAndSortedExpenses.length} of {expenses.length} expenses
                                 {dateRangeStart ? ` from ${new Date(dateRangeStart).toLocaleDateString('en-GB')}` : ''} 
                                 {dateRangeEnd ? ` to ${new Date(dateRangeEnd).toLocaleDateString('en-GB')}` : ''}
-                                {` (${filteredAndSortedExpenses.length} expense${filteredAndSortedExpenses.length !== 1 ? 's' : ''})`}
+                                {totalPages > 1 && ` (Page ${currentPage} of ${totalPages})`}
                             </div>
                         )}
                     </div>
                 </CardContent>
             </Card>
+
+            {/* Pagination Controls - Top (Desktop only) */}
+            {totalPages > 1 && (
+                <div className="hidden md:flex justify-between items-center mb-4">
+                    <div className="text-sm text-gray-600">
+                        Showing {startIndex + 1}-{Math.min(endIndex, filteredAndSortedExpenses.length)} of {filteredAndSortedExpenses.length} expenses
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={goToPrevPage}
+                            disabled={currentPage === 1}
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                            Previous
+                        </Button>
+                        
+                        <div className="flex gap-1">
+                            {getPageNumbers().map((page, index) => (
+                                page === '...' ? (
+                                    <span key={`ellipsis-${index}`} className="px-3 py-1 text-gray-500">...</span>
+                                ) : (
+                                    <Button
+                                        key={page}
+                                        variant={currentPage === page ? "default" : "outline"}
+                                        size="sm"
+                                        onClick={() => goToPage(page as number)}
+                                        className="min-w-[2.5rem]"
+                                    >
+                                        {page}
+                                    </Button>
+                                )
+                            ))}
+                        </div>
+                        
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={goToNextPage}
+                            disabled={currentPage === totalPages}
+                        >
+                            Next
+                            <ChevronRight className="w-4 h-4" />
+                        </Button>
+                    </div>
+                </div>
+            )}
             
             {/* Desktop Table View (Hidden on Mobile) */}
             <div className="hidden md:block">
@@ -295,9 +426,9 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
                                 </tr>
                             </thead>
                             <tbody>
-                                {filteredAndSortedExpenses.length > 0 ? (
+                                {paginatedExpenses.length > 0 ? (
                                     <>
-                                        {filteredAndSortedExpenses.map((expense) => (
+                                        {paginatedExpenses.map((expense) => (
                                             <tr key={expense.id} className="border-b">
                                                 <td className="py-2 px-4">
                                                     {editingId === expense.id ? (
@@ -388,10 +519,17 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
                                     </tr>
                                 )}
                                 <tr className="bg-gray-50 font-semibold">
-                                    <td className="py-3 px-4">Total</td>
-                                    <td className="py-3 px-4">{Number.isInteger(totalAmount) ? totalAmount.toString() : totalAmount.toFixed(2)}</td>
+                                    <td className="py-3 px-4">Page Total</td>
+                                    <td className="py-3 px-4">{Number.isInteger(pageTotal) ? pageTotal.toString() : pageTotal.toFixed(2)}</td>
                                     <td colSpan={3}></td>
                                 </tr>
+                                {totalPages > 1 && (
+                                    <tr className="bg-gray-100 font-bold">
+                                        <td className="py-3 px-4">Grand Total</td>
+                                        <td className="py-3 px-4">{Number.isInteger(totalAmount) ? totalAmount.toString() : totalAmount.toFixed(2)}</td>
+                                        <td colSpan={3}></td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </CardContent>
@@ -402,12 +540,12 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
             <div className="md:hidden">
                 <div className="flex justify-between items-center mb-2 px-2">
                     <div className="flex items-center gap-2">
-                        <span className="font-medium">Sort by:</span>
+                        <span className="font-medium text-sm">Sort:</span>
                         <Button 
                             size="sm" 
                             variant={sortField === 'date' ? "default" : "outline"} 
                             onClick={() => handleSort('date')}
-                            className="text-xs"
+                            className="text-xs px-2"
                         >
                             Date {sortField === 'date' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </Button>
@@ -415,24 +553,23 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
                             size="sm" 
                             variant={sortField === 'amount' ? "default" : "outline"} 
                             onClick={() => handleSort('amount')}
-                            className="text-xs"
+                            className="text-xs px-2"
                         >
                             Amount {sortField === 'amount' && (sortDirection === 'asc' ? '↑' : '↓')}
-                        </Button>
-                        <Button 
-                            size="sm" 
-                            variant={sortField === 'category' ? "default" : "outline"} 
-                            onClick={() => handleSort('category')}
-                            className="text-xs"
-                        >
-                            Category {sortField === 'category' && (sortDirection === 'asc' ? '↑' : '↓')}
                         </Button>
                     </div>
                 </div>
 
-                {filteredAndSortedExpenses.length > 0 ? (
+                {/* Mobile pagination info */}
+                {totalPages > 1 && (
+                    <div className="text-xs text-gray-600 mb-2 px-2">
+                        Showing {startIndex + 1}-{Math.min(endIndex, filteredAndSortedExpenses.length)} of {filteredAndSortedExpenses.length}
+                    </div>
+                )}
+
+                {paginatedExpenses.length > 0 ? (
                     <>
-                        {filteredAndSortedExpenses.map((expense) => (
+                        {paginatedExpenses.map((expense) => (
                             <Card key={expense.id} className="mb-3 shadow-sm">
                                 <CardContent className="p-3">
                                     <div 
@@ -556,13 +693,74 @@ const ExpensesList: FC<Props> = ({ expenses, onDelete, onUpdate }) => {
                 <Card className="mt-4 shadow-md">
                     <CardContent className="p-4">
                         <div className="flex justify-between items-center">
-                            <div className="font-semibold text-lg">Total</div>
+                            <div className="font-semibold text-lg">Page Total</div>
                             <div className="font-semibold text-lg">
-                                {Number.isInteger(totalAmount) ? totalAmount.toString() : totalAmount.toFixed(2)}
+                                {Number.isInteger(pageTotal) ? pageTotal.toString() : pageTotal.toFixed(2)}
                             </div>
                         </div>
+                        {totalPages > 1 && (
+                            <div className="flex justify-between items-center mt-2 pt-2 border-t">
+                                <div className="font-bold text-lg">Grand Total</div>
+                                <div className="font-bold text-lg">
+                                    {Number.isInteger(totalAmount) ? totalAmount.toString() : totalAmount.toFixed(2)}
+                                </div>
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
+
+                {/* Mobile Pagination Controls */}
+                {totalPages > 1 && (
+                    <Card className="mt-4 shadow-md">
+                        <CardContent className="p-4">
+                            <div className="flex justify-between items-center">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={goToPrevPage}
+                                    disabled={currentPage === 1}
+                                    className="flex items-center gap-1"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                    Prev
+                                </Button>
+                                
+                                <div className="flex items-center gap-1">
+                                    {getPageNumbers().slice(0, 3).map((page, index) => (
+                                        page === '...' ? (
+                                            <span key={`ellipsis-${index}`} className="px-2 text-gray-500">...</span>
+                                        ) : (
+                                            <Button
+                                                key={page}
+                                                variant={currentPage === page ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => goToPage(page as number)}
+                                                className="min-w-[2rem] px-2"
+                                            >
+                                                {page}
+                                            </Button>
+                                        )
+                                    ))}
+                                </div>
+                                
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={goToNextPage}
+                                    disabled={currentPage === totalPages}
+                                    className="flex items-center gap-1"
+                                >
+                                    Next
+                                    <ChevronRight className="w-4 h-4" />
+                                </Button>
+                            </div>
+                            
+                            <div className="text-center text-sm text-gray-600 mt-2">
+                                Page {currentPage} of {totalPages}
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
             </div>
         </div>
     );

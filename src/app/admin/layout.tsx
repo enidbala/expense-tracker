@@ -12,14 +12,19 @@ import { useRouter } from 'next/navigation';
 // Define menu items array
 const menuItems = [
     {
+        title: 'New Expense',
+        icon: <Plus className="h-4 w-4" />,
+        path: '/admin/new-expense',
+    },
+    {
         title: 'Expenses',
         icon: <LayoutDashboard className="h-4 w-4" />,
         path: '/admin/expenses',
     },
     {
-        title: 'New Expense',
-        icon: <Plus className="h-4 w-4" />,
-        path: '/admin/new-expense',
+        title: 'Monthly Summary',
+        icon: <LayoutDashboard className="h-4 w-4" />,
+        path: '/admin/expenses/monthly'
     },
     {
         title: 'My Account',
